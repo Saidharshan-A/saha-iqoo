@@ -1,0 +1,26 @@
+# SAHA – Build & IDE Files
+*.iml
+*.ipr
+*.iws
+.idea/
+.gradle/
+build/
+*.apk
+*.aab
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Misc
+*.log
+*.swp
+*.swo

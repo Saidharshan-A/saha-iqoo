@@ -1,0 +1,89 @@
+name: saha
+description: >
+  SAHA - Sovereign Autonomous Health Architecture.
+  An offline-first autonomous software engine that turns a frontline
+  healthcare worker's basic smartphone into a decentralized,
+  medical-grade diagnostic node.
+
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ----- State Management -----
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # ----- Navigation -----
+  go_router: ^14.6.2
+
+  # ----- Database (Encrypted SQLite) -----
+  sqflite_common_ffi: ^2.3.3
+  sqflite: ^2.3.3+2
+  # sqflite_sqlcipher: ^3.1.0+1  # uncomment when native plugin available
+  path: ^1.9.0
+  path_provider: ^2.1.4
+
+  # ----- Security & Crypto -----
+  flutter_secure_storage: ^9.2.2
+  encrypt: ^5.0.3
+  crypto: ^3.0.5
+  uuid: ^4.5.1
+
+  # ----- Networking & Connectivity -----
+  connectivity_plus: ^6.1.0
+  http: ^1.2.2
+
+  # ----- Camera & Media -----
+  camera: ^0.11.0+2
+  image: ^4.3.0
+  image_picker: ^1.1.2
+  record: ^5.1.2
+
+  # ----- ML / AI (On-device) -----
+  # tflite_flutter: ^0.10.4  # uncomment for Android/iOS native deployment
+
+  # ----- Background Tasks -----
+  workmanager: ^0.5.2
+
+  # ----- UI Utilities -----
+  intl: ^0.19.0
+  shimmer: ^3.0.0
+  fl_chart: ^0.69.2
+  permission_handler: ^11.3.1
+  cupertino_icons: ^1.0.8
+  url_launcher: ^6.3.1
+
+  # ----- Speech / Voice -----
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  bloc_test: ^9.1.7
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/models/
+    - assets/models/labels/
+    - assets/lang/
+    - assets/images/
+
+  # fonts:
+  #   - family: NotoSans
+  #     fonts:
+  #       - asset: assets/fonts/NotoSans-Regular.ttf
+  #       - asset: assets/fonts/NotoSans-Bold.ttf
+  #         weight: 700
+  #       - asset: assets/fonts/NotoSans-Light.ttf
+  #         weight: 300
