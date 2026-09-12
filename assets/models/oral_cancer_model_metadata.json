@@ -1,0 +1,22 @@
+{
+  "model_name": "saha_oral_research_screening",
+  "labels": [
+    "Cancer",
+    "Normal Oral",
+    "Non-Oral"
+  ],
+  "input": [
+    1,
+    224,
+    224,
+    3
+  ],
+  "test_accuracy": 0.8636,
+  "test_loss": 0.3557,
+  "dataset_counts": {
+    "cancer": 87,
+    "normal_oral": 44,
+    "non_oral": 300
+  },
+  "intended_use": "Research oral-lesion screening; requires clinician review and is not a diagnosis."
+}

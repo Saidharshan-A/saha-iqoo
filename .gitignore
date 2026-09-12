@@ -24,3 +24,8 @@ Thumbs.db
 *.log
 *.swp
 *.swo
+
+# Downloaded training data (reproducible from the training script).
+training/data/
+training/outputs/
+training/model_build.log

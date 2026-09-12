@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/services/abha_service.dart';
+import '../../../core/services/nfc_patient_card_service.dart';
 import '../../../core/utils/constants.dart';
 import '../blocs/patient_bloc.dart';
 import '../models/patient.dart';
 import '../repos/patient_repo.dart';
+import '../widgets/nfc_scan_dialog.dart';
 
 /// Detailed patient view with ABHA linkage, screening history
 /// shortcuts, and demographic information.
@@ -26,9 +28,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   List<Map<String, dynamic>> _screenings = [];
   bool _loading = true;
   bool _linkingAbha = false;
+  bool _writingNfcCard = false;
+  bool _nfcDialogOpen = false;
 
   final _repo = PatientRepository();
   final _abha = AbhaService();
+  final _nfcCards = NfcPatientCardService.instance;
 
   @override
   void initState() {
@@ -84,6 +89,72 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
+  Future<void> _writePatientCard() async {
+    final patient = _patient;
+    if (patient == null || _writingNfcCard) return;
+
+    setState(() => _writingNfcCard = true);
+    _nfcDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NfcScanDialog(
+        title: 'Write SAHA Card',
+        instruction: 'Hold the patient card against the back of the phone.',
+        onCancel: () async {
+          _nfcDialogOpen = false;
+          await _nfcCards.cancel();
+          if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        },
+      ),
+    );
+
+    try {
+      await _nfcCards.writeCard(
+        NfcPatientCardData(
+          patientId: patient.id,
+          fullName: patient.fullName,
+          age: patient.age,
+          gender: patient.gender,
+          aadhaarLast4: patient.aadhaarLast4,
+          phone: patient.phone,
+          village: patient.village,
+          district: patient.district,
+          state: patient.state,
+        ),
+      );
+      _closeNfcDialog();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${patient.fullName}\'s NFC card is ready.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } on NfcPatientCardException catch (error) {
+      _closeNfcDialog();
+      if (mounted && !error.cancelled) _showNfcError(error.message);
+    } catch (error) {
+      _closeNfcDialog();
+      if (mounted) _showNfcError('Could not write this card: $error');
+    } finally {
+      if (mounted) setState(() => _writingNfcCard = false);
+    }
+  }
+
+  void _closeNfcDialog() {
+    if (_nfcDialogOpen && mounted) {
+      _nfcDialogOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  void _showNfcError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -117,8 +188,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Delete Patient?'),
-                  content: Text(
-                      'Remove ${p.fullName} from local records? '
+                  content: Text('Remove ${p.fullName} from local records? '
                       'This cannot be undone.'),
                   actions: [
                     TextButton(
@@ -132,7 +202,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   ],
                 ),
               );
-              if (confirm == true && mounted) {
+              if (confirm == true && context.mounted) {
                 context.read<PatientBloc>().add(DeletePatient(p.id));
                 context.pop();
               }
@@ -246,17 +316,64 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               ? const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.link),
-                          label: Text(
-                              _linkingAbha ? 'Linking…' : 'Link ABHA ID'),
+                          label:
+                              Text(_linkingAbha ? 'Linking…' : 'Link ABHA ID'),
                         ),
                       ),
                     ],
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── NFC Patient Card ────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer.withAlpha(90),
+                borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.nfc, color: theme.colorScheme.secondary),
+                      const SizedBox(width: 10),
+                      Text('SAHA Patient Card',
+                          style: theme.textTheme.titleSmall),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Stores registration details for instant check-in. '
+                    'Aadhaar and screening records are never written.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _writingNfcCard ? null : _writePatientCard,
+                    icon: _writingNfcCard
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.contactless_outlined),
+                    label: Text(
+                      _writingNfcCard
+                          ? 'Waiting for card…'
+                          : 'Write or Update NFC Card',
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -331,8 +448,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               ..._screenings.map((s) {
                 final type = s['type']?.toString() ?? '';
                 final label = s['result_label']?.toString() ?? '';
-                final confidence =
-                    (s['confidence'] as num?)?.toDouble() ?? 0.0;
+                final confidence = (s['confidence'] as num?)?.toDouble() ?? 0.0;
                 final risk = s['risk_level']?.toString() ?? 'low';
                 final date = s['performed_at']?.toString() ?? '';
                 final isCancer = type.contains('cancer');
@@ -420,8 +536,7 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value,
-                style: Theme.of(context).textTheme.bodyMedium),
+            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
           ),
         ],
       ),

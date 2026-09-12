@@ -662,7 +662,7 @@ class _OralScanScreenState extends State<OralScanScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'FALLBACK MODE \u2014 No AI model available. Results are statistical estimates.',
+                      'PROTOTYPE DEMO \u2014 No trained AI model is installed. Scores and heatmaps are simulated, not medical results.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.amber.shade900,
@@ -690,7 +690,7 @@ class _OralScanScreenState extends State<OralScanScreen> {
                   Expanded(
                     child: Text(
                       'CNN Model Active \u2014 Real-time neural network inference. '
-                      'Train on Kaggle for clinical-grade accuracy.',
+                      'This research screening tool needs clinician review.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.blue.shade800,
@@ -829,7 +829,7 @@ class _OralScanScreenState extends State<OralScanScreen> {
     // Determine model type description
     String modelType;
     if (classifier.isModelTrained) {
-      modelType = 'Pre-trained EfficientNetB0 (Kaggle dataset)';
+      modelType = 'On-device research screening model';
     } else if (classifier.hasRealModel) {
       modelType = 'Browser-trained 4-block CNN (micro-trained)';
     } else {
@@ -841,20 +841,20 @@ class _OralScanScreenState extends State<OralScanScreen> {
     final confPct = (r.confidence * 100).toStringAsFixed(0);
     if (r.riskLevel == 'high') {
       explanation =
-          'The AI detected visual patterns consistent with potentially '
-          'malignant lesions — irregular texture, abnormal coloration, '
-          'and tissue changes. At $confPct% confidence, this warrants '
-          'immediate clinical evaluation and biopsy referral.';
+          'This image has been flagged for priority clinical review. The '
+          'research model found image patterns that need assessment by a '
+          'qualified clinician. The $confPct% score is not a diagnosis and '
+          'does not replace an oral examination or biopsy.';
     } else if (r.riskLevel == 'medium') {
       explanation =
-          'The AI found some visual indicators that may suggest early-stage '
-          'changes in oral tissue. At $confPct% confidence, a follow-up '
-          'screening in 2-4 weeks or specialist consultation is recommended.';
+          'This image should be reviewed by a clinician during follow-up. '
+          'The $confPct% score is a research-screening signal only; image '
+          'quality and clinical examination determine the next step.';
     } else if (r.riskLevel == 'low') {
       explanation =
-          'The oral tissue appears healthy with normal coloration and texture. '
-          'The AI found no significant visual markers of concern at $confPct% '
-          'confidence. Routine annual screening is recommended.';
+          'The model did not flag this image for priority review at $confPct% '
+          'confidence. This does not rule out disease. Continue routine oral '
+          'health checks and seek care for any persistent sore, patch, or pain.';
     } else {
       explanation =
           'The AI could not make a definitive determination. This may be due to '

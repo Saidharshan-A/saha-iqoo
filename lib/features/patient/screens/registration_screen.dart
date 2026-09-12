@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/services/nfc_patient_card_service.dart';
 import '../../../core/utils/constants.dart';
 import '../blocs/patient_bloc.dart';
 import '../models/patient.dart';
+import '../widgets/nfc_scan_dialog.dart';
 
 /// Full-screen patient registration form.
 ///
@@ -33,6 +35,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   String _gender = 'Male';
   bool _isSaving = false;
+  bool _isNfcBusy = false;
+  bool _nfcDialogOpen = false;
+  String? _cardPatientId;
+
+  final _nfcCards = NfcPatientCardService.instance;
 
   static const _genders = ['Male', 'Female', 'Other'];
 
@@ -56,7 +63,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
     final now = DateTime.now();
     final patient = Patient(
-      id: _uuid.v4(),
+      id: _cardPatientId ?? _uuid.v4(),
       fullName: _nameCtrl.text.trim(),
       age: int.parse(_ageCtrl.text.trim()),
       gender: _gender,
@@ -67,15 +74,139 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       district: _districtCtrl.text.trim().isNotEmpty
           ? _districtCtrl.text.trim()
           : null,
-      state:
-          _stateCtrl.text.trim().isNotEmpty ? _stateCtrl.text.trim() : null,
-      phone:
-          _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
+      state: _stateCtrl.text.trim().isNotEmpty ? _stateCtrl.text.trim() : null,
+      phone: _phoneCtrl.text.trim().isNotEmpty ? _phoneCtrl.text.trim() : null,
       createdAt: now,
       updatedAt: now,
     );
 
     context.read<PatientBloc>().add(AddPatient(patient));
+  }
+
+  Future<void> _scanPatientCard() async {
+    if (_isNfcBusy) return;
+    setState(() => _isNfcBusy = true);
+    _nfcDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NfcScanDialog(
+        title: 'Scan SAHA Card',
+        instruction: 'Hold the patient card against the back of the phone.',
+        onCancel: () async {
+          _nfcDialogOpen = false;
+          await _nfcCards.cancel();
+          if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        },
+      ),
+    );
+
+    try {
+      final profile = await _nfcCards.readCard();
+      _closeNfcDialog();
+      if (!mounted) return;
+      setState(() {
+        _cardPatientId = profile.patientId;
+        _nameCtrl.text = profile.fullName;
+        _ageCtrl.text = profile.age.toString();
+        _gender = _genders.contains(profile.gender) ? profile.gender : 'Other';
+        _aadhaarCtrl.text = profile.aadhaarLast4 ?? '';
+        _phoneCtrl.text = profile.phone ?? '';
+        _villageCtrl.text = profile.village ?? '';
+        _districtCtrl.text = profile.district ?? '';
+        _stateCtrl.text = profile.state ?? '';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${profile.fullName}\'s card loaded. Review and save.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } on NfcPatientCardException catch (error) {
+      _closeNfcDialog();
+      if (mounted && !error.cancelled) _showNfcError(error.message);
+    } catch (error) {
+      _closeNfcDialog();
+      if (mounted) _showNfcError('Could not read this card: $error');
+    } finally {
+      if (mounted) setState(() => _isNfcBusy = false);
+    }
+  }
+
+  Future<void> _writePatientCard() async {
+    if (_isNfcBusy) return;
+    if (!_formKey.currentState!.validate()) {
+      _showNfcError('Enter the patient name and age first.');
+      return;
+    }
+
+    final patientId = _cardPatientId ?? _uuid.v4();
+    final profile = NfcPatientCardData(
+      patientId: patientId,
+      fullName: _nameCtrl.text.trim(),
+      age: int.parse(_ageCtrl.text.trim()),
+      gender: _gender,
+      aadhaarLast4: _aadhaarCtrl.text.trim().isEmpty
+          ? null
+          : _aadhaarCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+      village:
+          _villageCtrl.text.trim().isEmpty ? null : _villageCtrl.text.trim(),
+      district: _districtCtrl.text.trim().isEmpty
+          ? null
+          : _districtCtrl.text.trim(),
+      state: _stateCtrl.text.trim().isEmpty ? null : _stateCtrl.text.trim(),
+    );
+
+    setState(() => _isNfcBusy = true);
+    _nfcDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => NfcScanDialog(
+        title: 'Write Patient Card',
+        instruction: 'Hold the blank NFC card against the back of the phone.',
+        onCancel: () async {
+          _nfcDialogOpen = false;
+          await _nfcCards.cancel();
+          if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        },
+      ),
+    );
+
+    try {
+      await _nfcCards.writeCard(profile);
+      _closeNfcDialog();
+      if (!mounted) return;
+      setState(() => _cardPatientId = patientId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${profile.fullName}\'s card is ready to scan.'),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+    } on NfcPatientCardException catch (error) {
+      _closeNfcDialog();
+      if (mounted && !error.cancelled) _showNfcError(error.message);
+    } catch (error) {
+      _closeNfcDialog();
+      if (mounted) _showNfcError('Could not write this card: $error');
+    } finally {
+      if (mounted) setState(() => _isNfcBusy = false);
+    }
+  }
+
+  void _closeNfcDialog() {
+    if (_nfcDialogOpen && mounted) {
+      _nfcDialogOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  void _showNfcError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+    );
   }
 
   @override
@@ -157,7 +288,50 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // ── NFC patient card ──────────────────────
+                  OutlinedButton.icon(
+                    onPressed: _isNfcBusy ? null : _scanPatientCard,
+                    icon: _isNfcBusy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.nfc),
+                    label: Text(
+                      _cardPatientId == null
+                          ? 'Scan SAHA Patient Card'
+                          : 'Scan Another Patient Card',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _cardPatientId == null
+                        ? 'Tap a patient card to fill this form automatically.'
+                        : 'NFC profile loaded. Review the details before saving.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: _cardPatientId == null
+                          ? theme.colorScheme.onSurfaceVariant
+                          : Colors.green.shade700,
+                      fontWeight: _cardPatientId == null
+                          ? FontWeight.normal
+                          : FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _isNfcBusy ? null : _writePatientCard,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Text(
+                      _cardPatientId == null
+                          ? 'Write form details to blank card'
+                          : 'Update this patient card',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   // ── Full Name ──────────────────────────────
                   TextFormField(
@@ -168,8 +342,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       border: OutlineInputBorder(),
                     ),
                     textCapitalization: TextCapitalization.words,
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Name is required' : null,
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Name is required'
+                        : null,
                   ),
                   const SizedBox(height: 16),
 
@@ -203,6 +378,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       Expanded(
                         flex: 3,
                         child: DropdownButtonFormField<String>(
+                          // Controlled value must update after an NFC scan.
+                          // ignore: deprecated_member_use
                           value: _gender,
                           decoration: const InputDecoration(
                             labelText: 'Gender *',

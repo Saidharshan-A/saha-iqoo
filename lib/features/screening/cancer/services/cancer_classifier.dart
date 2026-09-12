@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
+import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../../../../core/services/tfjs_bridge.dart';
 import '../../../../core/utils/constants.dart';
@@ -48,6 +50,9 @@ class CancerClassifier {
   /// Whether the model was micro-trained on synthetic data in the browser.
   bool _isModelMicroTrained = false;
 
+  /// Native TensorFlow Lite interpreter used by Android and iOS builds.
+  Interpreter? _tfliteInterpreter;
+
   /// Whether inference is using a real trained model (not fallback).
   bool get hasRealModel => _hasRealModel;
 
@@ -77,9 +82,35 @@ class CancerClassifier {
     try {
       Log.i('CancerClassifier: loading model...');
 
+      // ── TFLite (Android/iOS) ─────────────────────────────────────────
+      // The model is bundled with the APK, so screening works without data.
+      if (!kIsWeb) {
+        try {
+          _tfliteInterpreter = await Interpreter.fromAsset(
+            AppConstants.oralCancerModelPath,
+            options: InterpreterOptions()..threads = 2,
+          );
+          final inputShape = _tfliteInterpreter!.getInputTensor(0).shape;
+          final outputShape = _tfliteInterpreter!.getOutputTensor(0).shape;
+          if (inputShape.join(',') != '1,224,224,3' ||
+              outputShape.join(',') != '1,3') {
+            throw StateError(
+              'Unexpected model tensor shapes: input=$inputShape output=$outputShape',
+            );
+          }
+          _hasRealModel = true;
+          _isModelTrained = true;
+          Log.i('CancerClassifier: bundled TFLite research model loaded');
+        } catch (e) {
+          _tfliteInterpreter?.close();
+          _tfliteInterpreter = null;
+          Log.w('CancerClassifier: TFLite model unavailable ($e)');
+        }
+      }
+
       // ── TF.js (web) ─────────────────────────────────────────────────
       final tfjs = TfjsBridge.instance;
-      if (tfjs.isAvailable) {
+      if (!_hasRealModel && tfjs.isAvailable) {
         Log.i('CancerClassifier: TF.js available, attempting model load');
         final loaded = await tfjs.loadOralModel(
           AppConstants.oralCancerWebModelPath,
@@ -124,7 +155,9 @@ class CancerClassifier {
 
     // ── 2. Run inference ──────────────────────────────────────────────
     List<double> logits;
-    if (_hasRealModel) {
+    if (_tfliteInterpreter != null) {
+      logits = _runTfliteInference(input);
+    } else if (_hasRealModel) {
       logits = await _runTfjsInference(input);
     } else {
       logits = _fallbackInference(input);
@@ -159,7 +192,9 @@ class CancerClassifier {
     await Future<void>.delayed(Duration.zero);
 
     List<double> logits;
-    if (_hasRealModel) {
+    if (_tfliteInterpreter != null) {
+      logits = _runTfliteInference(normalizedInput);
+    } else if (_hasRealModel) {
       logits = await _runTfjsInference(normalizedInput);
     } else {
       logits = _fallbackInference(normalizedInput);
@@ -244,6 +279,8 @@ class CancerClassifier {
 
   /// Release resources.
   void dispose() {
+    _tfliteInterpreter?.close();
+    _tfliteInterpreter = null;
     _isLoaded = false;
     _hasRealModel = false;
     _isModelTrained = false;
@@ -431,6 +468,37 @@ class CancerClassifier {
         ),
       );
       lastActivations!.add(layer);
+    }
+  }
+
+  /// Runs the bundled [1, 224, 224, 3] float32 TFLite model.
+  /// The model already returns softmax probabilities. We return log-probability
+  /// values so the shared calibration path can apply temperature scaling.
+  List<double> _runTfliteInference(Float32List input) {
+    final interpreter = _tfliteInterpreter;
+    if (interpreter == null || input.length != 224 * 224 * 3) {
+      return _fallbackInference(input);
+    }
+    final output = List<List<double>>.generate(
+      1,
+      (_) => List<double>.filled(_labels.length, 0),
+    );
+    try {
+      interpreter.run(input.reshape<double>([1, 224, 224, 3]), output);
+      final probabilities = output.first;
+      if (probabilities.any((value) => !value.isFinite || value < 0)) {
+        throw StateError('Invalid TFLite probabilities');
+      }
+      lastRealHeatmap = null;
+      lastRealHeatmapSize = 0;
+      _cacheSyntheticActivations();
+      return probabilities
+          .map((probability) => math.log(math.max(probability, 1e-10)))
+          .toList();
+    } catch (e) {
+      Log.w('CancerClassifier: TFLite inference failed ($e)');
+      _hasRealModel = false;
+      return _fallbackInference(input);
     }
   }
 }

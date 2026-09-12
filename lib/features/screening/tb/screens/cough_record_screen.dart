@@ -615,7 +615,7 @@ class _CoughRecordScreenState extends State<CoughRecordScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'FALLBACK MODE \u2014 No AI model available. Results are statistical estimates.',
+                      'PROTOTYPE DEMO \u2014 No trained AI model is installed. Scores and heatmaps are simulated, not medical results.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.amber.shade900,
