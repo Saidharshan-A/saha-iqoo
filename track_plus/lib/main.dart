@@ -726,6 +726,7 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     _frameBusy = true;
     try {
       final plane = image.planes.first;
+      final vPlane = image.planes.length > 2 ? image.planes[2] : null;
       final rowStride = plane.bytesPerRow;
       final pixelStride = plane.bytesPerPixel ?? 1;
       final left = image.width ~/ 4;
@@ -733,19 +734,34 @@ class _MeasurementScreenState extends State<MeasurementScreen>
       final top = image.height ~/ 4;
       final bottom = image.height * 3 ~/ 4;
       var total = 0;
+      var redTotal = 0.0;
       var count = 0;
       for (var y = top; y < bottom; y += 8) {
         for (var x = left; x < right; x += 8) {
           final index = y * rowStride + x * pixelStride;
           if (index < plane.bytes.length) {
-            total += plane.bytes[index];
+            final yValue = plane.bytes[index];
+            total += yValue;
+            if (vPlane != null) {
+              final chromaIndex =
+                  (y ~/ 2) * vPlane.bytesPerRow +
+                  (x ~/ 2) * (vPlane.bytesPerPixel ?? 1);
+              redTotal += chromaIndex < vPlane.bytes.length
+                  ? (yValue + 1.402 * (vPlane.bytes[chromaIndex] - 128)).clamp(
+                      0,
+                      255,
+                    )
+                  : yValue;
+            } else {
+              redTotal += yValue;
+            }
             count++;
           }
         }
       }
       if (count > 0) {
         _brightness = total / count;
-        if (now > 2000) _addSample(_brightness);
+        if (now > 2000) _addSample(redTotal / count);
       }
     } finally {
       _frameBusy = false;
@@ -768,19 +784,19 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     if (elapsed >= 11)
       estimate = SignalEstimator.estimate(
         _samples,
-        minConfidence: _isChest ? .30 : .38,
+        minConfidence: _isChest ? .30 : .18,
       );
     final gyroRms = _gyroCount == 0 ? 0.0 : math.sqrt(_gyroEnergy / _gyroCount);
-    final placementOk = _isChest
-        ? gyroRms < .32
-        : _brightness > 18 && _brightness < 252;
+    final placementOk = _isChest ? gyroRms < .32 : _brightness > 5;
     if (estimate != null && placementOk) {
       _candidates.add(estimate.bpm);
       if (_candidates.length > 3) _candidates.removeAt(0);
       final spread = _candidates.isEmpty
           ? 999
           : _candidates.reduce(math.max) - _candidates.reduce(math.min);
-      final stable = _candidates.length == 3 && spread <= (_isChest ? 9 : 6);
+      final stable =
+          _candidates.length >= (_isChest ? 3 : 2) &&
+          spread <= (_isChest ? 9 : 15);
       _liveBpm = estimate.bpm.round();
       _quality = (estimate.confidence * (stable ? 1 : .78)).clamp(0, 1);
       _status = stable
@@ -807,7 +823,9 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     final spread = _candidates.length < 3
         ? 999.0
         : _candidates.reduce(math.max) - _candidates.reduce(math.min);
-    final stable = _candidates.length >= 3 && spread <= (_isChest ? 9 : 6);
+    final stable =
+        _candidates.length >= (_isChest ? 3 : 2) &&
+        spread <= (_isChest ? 9 : 15);
     final result = !cancelled && stable
         ? (_candidates.reduce((a, b) => a + b) / _candidates.length).round()
         : null;
