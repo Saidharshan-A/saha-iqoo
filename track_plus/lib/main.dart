@@ -592,6 +592,7 @@ class _MeasurementScreenState extends State<MeasurementScreen>
   StreamSubscription<GyroscopeEvent>? _gyroSub;
   CameraController? _camera;
   Timer? _ticker;
+  Timer? _waveRefresh;
   bool _running = false;
   bool _preparing = false;
   bool _frameBusy = false;
@@ -653,6 +654,9 @@ class _MeasurementScreenState extends State<MeasurementScreen>
         ..reset()
         ..start();
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+      _waveRefresh = Timer.periodic(const Duration(milliseconds: 120), (_) {
+        if (mounted && _running) setState(() {});
+      });
       if (mounted)
         setState(() {
           _running = true;
@@ -784,7 +788,7 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     if (elapsed >= 11)
       estimate = SignalEstimator.estimate(
         _samples,
-        minConfidence: _isChest ? .30 : .18,
+        minConfidence: _isChest ? .30 : .10,
       );
     final gyroRms = _gyroCount == 0 ? 0.0 : math.sqrt(_gyroEnergy / _gyroCount);
     final placementOk = _isChest ? gyroRms < .32 : _brightness > 5;
@@ -795,7 +799,7 @@ class _MeasurementScreenState extends State<MeasurementScreen>
           ? 999
           : _candidates.reduce(math.max) - _candidates.reduce(math.min);
       final stable =
-          _candidates.length >= (_isChest ? 3 : 2) &&
+          _candidates.length >= (_isChest ? 3 : 1) &&
           spread <= (_isChest ? 9 : 15);
       _liveBpm = estimate.bpm.round();
       _quality = (estimate.confidence * (stable ? 1 : .78)).clamp(0, 1);
@@ -820,11 +824,12 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     if (!_running && !_preparing) return;
     _clock.stop();
     _ticker?.cancel();
+    _waveRefresh?.cancel();
     final spread = _candidates.length < 3
         ? 999.0
         : _candidates.reduce(math.max) - _candidates.reduce(math.min);
     final stable =
-        _candidates.length >= (_isChest ? 3 : 2) &&
+        _candidates.length >= (_isChest ? 3 : 1) &&
         spread <= (_isChest ? 9 : 15);
     final result = !cancelled && stable
         ? (_candidates.reduce((a, b) => a + b) / _candidates.length).round()
@@ -868,6 +873,7 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     WidgetsBinding.instance.removeObserver(this);
     _clock.stop();
     _ticker?.cancel();
+    _waveRefresh?.cancel();
     _accelSub?.cancel();
     _gyroSub?.cancel();
     final controller = _camera;
