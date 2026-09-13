@@ -825,8 +825,8 @@ class _MeasurementScreenState extends State<MeasurementScreen>
     _clock.stop();
     _ticker?.cancel();
     _waveRefresh?.cancel();
-    final spread = _candidates.length < 3
-        ? 999.0
+    final spread = _candidates.length < 2
+        ? 0.0
         : _candidates.reduce(math.max) - _candidates.reduce(math.min);
     final stable =
         _candidates.length >= (_isChest ? 3 : 1) &&
